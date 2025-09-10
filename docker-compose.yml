@@ -1,0 +1,99 @@
+services:
+  order-db:
+    image: mongo:latest
+    container_name: order-db
+    restart: always
+    networks:
+      - orchestrator-saga
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=12345
+    ports:
+      - "27017:27017"
+
+  product-db:
+    image: postgres:latest
+    container_name: product-db
+    networks:
+      - orchestrator-saga
+    environment:
+      - POSTGRES_DB=product-db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5437:5432"
+
+  payment-db:
+    image: postgres:latest
+    container_name: payment-db
+    networks:
+      - orchestrator-saga
+    environment:
+      - POSTGRES_DB=payment-db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5433:5432"
+
+  inventory-db:
+    container_name: inventory-db
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: inventory-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /data/postgres
+    networks:
+      - orchestrator-saga
+    ports:
+      - "5438:5432"
+
+  kafka:
+    container_name: kafka
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    restart: always
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    networks:
+      - orchestrator-saga
+    environment:
+      REDPANDA_BROKERS: "kafka:9092"
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 2G
+      - --reserve-memory 0M
+      - --overprovisioned
+      - --node-id 0
+      - --check=false
+    volumes:
+      - ./data/kafka/data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9644/v1/status/ready"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  redpanda-console:
+    container_name: redpanda
+    image: docker.redpanda.com/redpandadata/console:latest
+    restart: on-failure
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
+    ports:
+      - "8081:8080"
+    networks:
+      - orchestrator-saga
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["kafka:9092"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+networks:
+  orchestrator-saga:
+    driver: bridge
